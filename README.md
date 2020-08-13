@@ -1,12 +1,25 @@
-This playbook installs docker and docker compose on CentOS7.
+[![](https://github.com/ansible-playbooks-centos7/docker/workflows/build/badge.svg)](https://github.com/ansible-playbooks-centos7/docker/actions?query=workflow%3Abuild)
 
-## Install docker and docker compose
+# Ansible Playbook - Docker
 
-Change to root and execute commands below.
+## Introduction
+
+This program installs Docker and Docker compose on CentOS7.
+
+## How To install
+
+1. Install Ansible and git
 
 ```
-ansible-galaxy install -r roles/requirements.yml
+sudo yum -y install epel-release git
+sudo yum -y install ansible
+```
+
+2. Execute playbook as root
+
+```
+git clone https://github.com/ansible-playbooks-centos7/docker.git
+cd docker
+ansible-galaxy install -r roles/requirements.yml -p roles/
 ansible-playbook -i localhost, -c local install.yml
 ```
-
-

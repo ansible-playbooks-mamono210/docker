@@ -1,0 +1,66 @@
+---
+name: build
+on: [deployment, push]
+
+jobs:
+  ansible-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Ansible lint
+        uses: ansible/ansible-lint-action@master
+        with:
+          targets: |
+            install.yml
+
+  molecule:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Set up Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: '3.8'
+
+      - name: Set latest AMI image id to molecule.yml
+        run: |
+          git clone https://github.com/packer-tm/aws-ami_centos7.git
+          cd aws-ami_centos7
+          AMI_ID=$(git branch -a | grep ami- | sed 's/^[ \t]*remotes\/origin\///g')
+          cd ..
+          sed -i -e "s/'{{ AMI_ID }}'/${AMI_ID}/" molecule/default/molecule.yml
+
+      - name: Install dependencies
+        run: pip install -r molecule/requirements.txt
+
+      - name: Create galaxy dependencies file in 'molecule/default/'
+        run: cp roles/requirements.yml molecule/default/requirements.yml
+
+      - name: Test with molecule
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          EC2_REGION: ap-northeast-1
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+        run: |
+          molecule test
+
+  trailing-whitespace:
+    name: Find Trailing Whitespace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: harupy/find-trailing-whitespace@56310d7
+
+  lintAllTheThings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: yaml-lint
+        uses: ibiqlik/action-yamllint@665205c
+        with:
+          config_file: .yamllint
