@@ -25,37 +25,36 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Set AMI image id to environment variables
+      - name: Install dependencies
+        run: |
+          pip install -r molecule/requirements.txt
+
+      - name: Create galaxy dependencies file in 'molecule/default/'
+        run: |
+          cp roles/requirements.yml molecule/default/requirements.yml
+
+      - name: Set latest AMI image id to environment variables
         run: |
           AMI_ID=$(aws ec2 describe-images \
           --owners "${{ secrets.AMI_OWNER_ID }}" \
           --filters "Name=name,Values=centos*" \
           --query 'Images[*][CreationDate, ImageId, Name]' \
           --output text | sort -r | awk 'NR==1 {print $2}')
-          sed -i -e "s/'{{ AMI_ID }}'/${AMI_ID}/" molecule/default/molecule.yml
+          echo "AMI_ID=${AMI_ID}" >> $GITHUB_ENV
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-1
 
-      - name: Install dependencies
-        run: pip install -r molecule/requirements.txt
-
-      - name: Create galaxy dependencies file in 'molecule/default/'
-        run: cp roles/requirements.yml molecule/default/requirements.yml
-
       - name: Test with molecule
+        run: |
+          molecule test
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           EC2_REGION: ap-northeast-1
           PY_COLORS: '1'
           ANSIBLE_FORCE_COLOR: '1'
-        run: |
-          molecule test
-
-      - name: Show Ansible version
-        run: ansible --version
 
   trailing-whitespace:
     name: Find Trailing Whitespace
