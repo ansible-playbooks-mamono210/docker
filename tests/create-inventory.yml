@@ -1,0 +1,11 @@
+---
+- name: Create keypair
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Create AWS EC2 inventory
+      ansible.builtin.template:
+        src: template.aws_ec2.yml
+        dest: aws_ec2.yml
+        mode: 0644

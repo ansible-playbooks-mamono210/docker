@@ -1,0 +1,18 @@
+---
+- name: Create CloudFormation stack
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Create CloudFormation stack
+      amazon.aws.cloudformation:
+        stack_name: '{{ aws_cfn_stackname }}'
+        state: present
+        disable_rollback: true
+        template_url: '{{ cfn_template_url }}'
+        template_parameters:
+          KeyName: '{{ keypair_name }}'
+          ImageId: '{{ ami_id }}'
+        tags:
+          Name: '{{ aws_cfn_stackname }}'

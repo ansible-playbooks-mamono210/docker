@@ -1,0 +1,24 @@
+---
+- name: Create keypair
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    keypair_path: "{{ lookup('env', 'GITHUB_WORKSPACE') }}/ssh_key"
+
+  tasks:
+    - name: Delete remote keypair
+      ec2_key:
+        name: "{{ keypair_name }}"
+        state: absent
+
+    - name: Create keypair
+      ec2_key:
+        name: "{{ keypair_name }}"
+      register: keypair
+
+    - name: Persist the keypair
+      copy:
+        dest: "{{ keypair_path }}"
+        content: "{{ keypair.key.private_key }}"
+        mode: 0600

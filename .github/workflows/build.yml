@@ -14,8 +14,14 @@ jobs:
         with:
           targets: |
             install.yml
+            tests/create-cfn-stack.yml
+            tests/create-inventory.yml
+            tests/create-keypair.yml
+            tests/delete-cfn-stack.yml
+            tests/delete-keypair.yml
+            tests/verify.yml
 
-  molecule:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -26,12 +32,20 @@ jobs:
           python-version: '3.8'
 
       - name: Install dependencies
-        run: |
-          pip install -r molecule/requirements.txt
+        run: pip install -r tests/requirements.txt
 
-      - name: Create galaxy dependencies file in 'molecule/default/'
+      - name: Create EC2 Pair key
         run: |
-          cp roles/requirements.yml molecule/default/requirements.yml
+          ansible-playbook tests/create-keypair.yml \
+          -e "keypair_name=${KEYPAIR_NAME}"
+          cat ssh_key
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          KEYPAIR_NAME: molecule_docker_install
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
 
       - name: Set latest AMI image id to environment variables
         run: |
@@ -44,15 +58,115 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ap-northeast-1
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      - name: Test with molecule
+      - name: Create VPC + EC2
         run: |
-          molecule test
+          ansible-playbook tests/create-cfn-stack.yml \
+          -e "aws_cfn_stackname=${AWS_CFN_STACKNAME}" \
+          -e "cfn_template_url=${AWS_CFN_TEMPLATE_URL}" \
+          -e "ami_id=${AMI_ID}" \
+          -e "keypair_name=${KEYPAIR_NAME}"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          EC2_REGION: ap-northeast-1
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_CFN_STACKNAME: molecule-docker-install
+          AWS_CFN_TEMPLATE_URL: https://cf-templates-1w6t676m4gmn3-ap-northeast-1.s3-ap-northeast-1.amazonaws.com/centos7.yaml
+          KEYPAIR_NAME: molecule_docker_install
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+      - name: Set Vpc id to environment variables
+        run: |
+          VPC_ID=$(aws cloudformation describe-stacks \
+          --stack-name ${AWS_CFN_STACKNAME} \
+          | jq '.Stacks[].Outputs[].OutputValue' \
+          | sed -e 's/\"//g')
+          echo "VPC_ID=${VPC_ID}" >> $GITHUB_ENV
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_CFN_STACKNAME: molecule-docker-install
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+      - name: Create Ansible EC2 inventory
+        run: |
+          ansible-playbook tests/create-inventory.yml \
+          -e "vpc_id=${VPC_ID}"
+
+      - name: Install Ansible galaxy
+        run:
+          ansible-galaxy install -r roles/requirements.yml
+
+      - name: Execute ansible-playbook command
+        run: |
+          ansible-playbook -i tests/aws_ec2.yml \
+          -u centos \
+          --private-key ssh_key \
+          install.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+          ANSIBLE_SSH_RETRIES: 30
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+      - name: Idempotence check
+        run: |
+          ansible-playbook -i tests/aws_ec2.yml \
+          -u centos \
+          --private-key ssh_key \
+          install.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+          ANSIBLE_SSH_RETRIES: 30
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+      - name: Check whether Docker is installed
+        run: |
+          ansible-playbook -i tests/aws_ec2.yml \
+          -u centos \
+          --private-key ssh_key \
+          tests/verify.yml
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: false
+          ANSIBLE_SSH_RETRIES: 30
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+      - name: Delete VPC + EC2
+        run: |
+          ansible-playbook tests/delete-cfn-stack.yml \
+          -e "aws_cfn_stackname=${AWS_CFN_STACKNAME}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_CFN_STACKNAME: molecule-docker-install
+          PY_COLORS: '1'
+          ANSIBLE_FORCE_COLOR: '1'
+
+      - name: Delete EC2 Pair key
+        run: |
+          ansible-playbook tests/delete-keypair.yml \
+          -e "keypair_name=${KEYPAIR_NAME}" \
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          KEYPAIR_NAME: molecule_docker_install
           PY_COLORS: '1'
           ANSIBLE_FORCE_COLOR: '1'
 
