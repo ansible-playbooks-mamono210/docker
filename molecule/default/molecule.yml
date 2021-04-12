@@ -27,5 +27,6 @@ scenario:
     - syntax
     - create
     - converge
+    - verify
     - cleanup
     - destroy
