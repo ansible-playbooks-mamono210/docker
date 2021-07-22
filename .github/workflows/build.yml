@@ -55,9 +55,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        distro:
-          - centos7
-          - centos8
+        include:
+          - distro: centos7
+            python_interpreter: /usr/bin/python
+          - distro:  centos8
+            python_interpreter: /usr/libexec/platform-python
 
     steps:
       - uses: actions/checkout@v2
@@ -66,6 +68,11 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: '3.9'
+
+      - name: Set Ansible Python interpreter
+        run: |
+          INTERPRETER=`which python`
+          echo "ANSIBLE_PYTHON_INTERPRETER=${INTERPRETER}" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -79,8 +86,31 @@ jobs:
         run: |
           ansible-galaxy collection install community.molecule
 
+      - name: Set timestamp for making sure Molecule would create unique AWS resources
+        run: |
+          TIMESTAMP=$(date --date "9 hours" "+%Y%m%d_%H%M%S")
+          echo "AWSIAM_USER=molecule_awsiam_user_${TIMESTAMP}_${{ matrix.distro }}" >> $GITHUB_ENV
+          echo "AWSIAM_POLICY_NAME=molecule_awsiam_policy_name_${TIMESTAMP}_${{ matrix.distro }}" >> $GITHUB_ENV
+
+      - name: Create AWS Access Key
+        run: |
+          molecule dependency --scenario-name awsiam
+          molecule converge --scenario-name awsiam
+        env:
+          ANSIBLE_FORCE_COLOR: '1'
+          AWS_ACCESS_KEY_ID_1: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_SECRET_ACCESS_KEY_1: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          MOLECULE_VERBOSITY: 0
+          PROFILE_TASKS_SORT_ORDER: 'none'
+          PROFILE_TASKS_TASK_OUTPUT_LIMIT: '200'
+          PY_COLORS: '1'
+          TZ: 'Asia/Tokyo'
+
       - name: Set latest AMI image id to environment variables
         run: |
+          sleep 10
+
           AMI_ID=$(aws ec2 describe-images \
           --owners "${{ secrets.AMI_OWNER_ID }}" \
           --filters "Name=name,Values=${{ matrix.distro }}*" \
@@ -88,9 +118,7 @@ jobs:
           --output text | sort -r | awk 'NR==1 {print $2}')
           echo "AMI_ID=${AMI_ID}" >> $GITHUB_ENV
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Set timestamp for making sure Molecule would create unique AWS resources
         run: |
@@ -106,10 +134,10 @@ jobs:
         env:
           # AMI_ID: sotred in system environment variables
           ANSIBLE_FORCE_COLOR: '1'
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ANSIBLE_PYTHON_INTERPRETER: ${{ matrix.python_interpreter }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           # KEYPAIR_NAME: sotred in system environment variables
+          MOLECULE_VERBOSITY: 0
           # PLATFORM_NAME: sotred in system environment variables
           PROFILE_TASKS_SORT_ORDER: 'none'
           PROFILE_TASKS_TASK_OUTPUT_LIMIT: '200'
@@ -117,6 +145,20 @@ jobs:
           # SECURITY_GROUP_NAME: sotred in system environment variables
           TZ: 'Asia/Tokyo'
           VPC_SUBNET_ID: ${{ secrets.VPC_SUBNET_ID }}
+
+      - name: Delete AWS Access Key
+        run: |
+          molecule cleanup --scenario-name awsiam
+        env:
+          ANSIBLE_FORCE_COLOR: '1'
+          AWS_ACCESS_KEY_ID_1: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_SECRET_ACCESS_KEY_1: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          MOLECULE_VERBOSITY: 0
+          PROFILE_TASKS_SORT_ORDER: 'none'
+          PROFILE_TASKS_TASK_OUTPUT_LIMIT: '200'
+          PY_COLORS: '1'
+          TZ: 'Asia/Tokyo'
 
       - name: Show Ansible version
         run: |
