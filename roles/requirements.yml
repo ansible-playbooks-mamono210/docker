@@ -1,2 +1,4 @@
 ---
-- geerlingguy.docker
+roles:
+  - name: mamono210.docker
+    src: https://github.com/ansible-roles-mamono210/docker.git

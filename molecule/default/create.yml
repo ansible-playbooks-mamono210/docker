@@ -1,5 +1,5 @@
 ---
-- name: Destroy
+- name: Create
   hosts: localhost
   connection: local
   gather_facts: false
@@ -7,6 +7,6 @@
   tasks:
     - name: Execute
       ansible.builtin.include_role:
-        name: mamono210.molecule_test_ec2
+        name: mamono210.molecule_ec2_driver
       vars:
-        resource_state: 'absent'
+        molecule_ec2_driver_resource_state: 'present'
